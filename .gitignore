@@ -47,3 +47,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# auth file
+config.R
+
+# data
+/data
+
+# html
+*.html
+HW2-exploration_files

@@ -1,0 +1,504 @@
+---
+title: "HW4: Exploratory Data Viz"
+subtitle: "Part II"
+author: "Oksana Protsukha"
+date: 2024-02-03
+toc: true
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+## Vocabulary
+
+Types of EV charging connectors:
+- Level 1 connector: standardized connector primarily for home use. The charge rate is 3-5 miles per hour.
+Applicable for trips up to 40 miles or less daily.
+
+- Level 2 connector: standardized connector primarily for home or office use. The charge rate is 15-30 miles per hour.
+Applicable for trips 100+ miles daily.
+
+- DC fast charging: three connector types (CCS, CHAdeMO, NACS) connected to dedicated high power stations. The charge rate is 150-400 miles per hour.
+Applicable for trips 300+ miles daily.
+
+## Setup 
+
+### Global options
+
+```{r global_options, results='hide', echo=FALSE}
+rm(list = ls())
+options(scipen = 999) # disable scientific notation
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load packages
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+#| code-fold: true
+
+# load packages
+library(httr)
+library(jsonlite)
+library(tidyverse)
+library(broom)
+library(readr)
+library(gt)
+library(openintro)
+library(ggplot2)
+library(modelr)
+library(lterdatasampler)
+library(sf)
+library(dplyr)
+library(maptiles)
+library(kableExtra)
+library(janitor)
+```
+
+### Authentice API keys
+
+```{r api_keys, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# load configuration
+source(file.path(here::here('config.R')))
+
+# retrieve API Key
+api_key <- NREL_API_KEY
+```
+
+
+### Import data
+
+#### EV charging stations data
+##### California
+```{r ca_ev_data_import, warning=FALSE, message=FALSE}
+#| code-fold: true
+
+# get charging stations for California
+# specify API endpoint and parameters
+api_url <- "https://developer.nrel.gov/api/alt-fuel-stations/v1"
+
+api_params <- list(
+  format = "json",  
+  api_key = api_key, 
+  status = paste(c("E", "P"), collapse = ","),  # E = charging stations in operation; P = planned
+  access = "public",
+  fuel_type = "ELEC",
+  cng_vehicle_class = "LD", # LD = light duty vehicles
+  country = "US",
+  state = "CA",
+  limit = "all"
+)
+
+# construct the full URL with parameters
+request_url <- modify_url(api_url, query = api_params)
+
+# make a GET request to the API
+response <- GET(request_url)
+
+# extract the fuel_stations data from the response
+fuel_stations_df <- content(response, "parsed")$fuel_stations
+
+# convert the list to a dataframe
+fuel_stations_df <- as.data.frame(do.call(rbind, fuel_stations_df))
+```
+
+
+##### United States
+```{r ev_all_states_data_import, warning=FALSE, message=FALSE}
+#| code-fold: true
+
+# get charging stations for United States
+# specify API endpoint and parameters
+api_url <- "https://developer.nrel.gov/api/alt-fuel-stations/v1"
+
+api_params <- list(
+  format = "json",  
+  api_key = api_key, 
+  status = paste(c("E", "P"), collapse = ","), # E = charging stations in operation; P = planned
+  access = "public",
+  fuel_type = "ELEC",
+  cng_vehicle_class = "LD", # LD = light duty vehicles
+  country = "US",
+  limit = "all"
+)
+
+# construct the full URL with parameters
+request_url <- modify_url(api_url, query = api_params)
+
+# make a GET request to the API
+response <- GET(request_url)
+
+# extract the fuel_stations data from the response
+fuel_stations_us_df <- content(response, "parsed")$fuel_stations
+
+# convert the list to a dataframe
+fuel_stations_us_df <- as.data.frame(do.call(rbind, fuel_stations_us_df))
+```
+
+
+
+#### CEJST (Climate and Economic Justice Screening Tool) data
+
+```{r , cejst-data-import, results='hide', warning=FALSE, message=FALSE}
+#| code-fold: true
+
+# read in shape file
+cejst <- st_read(here::here("data/usa/usa.shp"))
+
+# make an initial plot of cejst: California state
+cejst %>% 
+  filter(SF == "California") %>% 
+  select(GEOID10) %>% 
+  ggplot() + 
+  geom_sf(size = 1.5, color = "black", fill = "#FFECB3") +
+  ggtitle("CEJST: California") + 
+  coord_sf() +
+  theme_minimal()
+```
+
+
+## Data Wrangling
+
+### EV charging data
+
+#### California
+
+```{r ca_ev_data_import_process, warning=FALSE, message=FALSE, results='hide'}
+# select the fields for analysis
+fuel_stations_df_clean <- fuel_stations_df %>% 
+  filter(!is.na(fuel_type_code)) %>% 
+  select('id', 'access_code','owner_type_code', 'open_date', 'restricted_access', 'maximum_vehicle_class','facility_type', 'city','state','zip','ev_workplace_charging', 'ev_level1_evse_num', 'ev_level2_evse_num', 'ev_dc_fast_num' , 'status_code', 'longitude', 'latitude')
+
+# convert data frame to sf object
+fuel_stations_sf <- fuel_stations_df_clean %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# define the boundaries of California state
+california_bbox <- st_bbox(c(xmin = -124.409591, ymin = 32.534156, 
+                             xmax = -114.131211, ymax = 42.009518), 
+                           crs = st_crs(fuel_stations_sf))
+
+ca_ev_sf <- fuel_stations_sf %>% 
+  st_set_crs(st_crs(california_bbox)) %>%  # set CRS of ca_ev_sf df to the California bbox
+  st_crop(california_bbox)  # crop ca_ev_sf df to the bounding box of California
+
+```
+
+#### US
+
+```{r , us_ev_data_import, warning=FALSE, message=FALSE, results='hide'}
+# select the fields for analysis
+fuel_stations_us_df_clean <- fuel_stations_us_df %>% 
+  filter(!is.na(fuel_type_code)) %>% 
+  select('id', 'status_code', 'access_code','owner_type_code', 'open_date', 'restricted_access', 'maximum_vehicle_class','facility_type', 'city','state','zip','ev_workplace_charging', 'ev_level1_evse_num', 'ev_level2_evse_num', 'ev_dc_fast_num' , 'longitude', 'latitude')
+
+# convert data frame to sf object
+us_ev_sf <- fuel_stations_us_df_clean %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+```
+
+### CEJST (Climate and Economic Justice Screening Tool) data
+Source: https://static-data-screeningtool.geoplatform.gov/data-versions/1.0/data/score/downloadable/1.0-shapefile-codebook.zip
+
+```{r , cejst-clean, results='hide', warning=FALSE, message=FALSE}
+#| code-fold: true
+
+# select the fields for analysis
+cejst_clean <- cejst %>% 
+  select(SF, CF, GEOID10, DSF_PFS, EBF_PFS, LMI_PFS, P100_PFS, P200_I_PFS, NPL_PFS, TSDF_PFS, TPF, TF_PFS, N_ENY, N_TRN, SN_C, PLHSE, EB_ET, DS_ET, TP_ET, POV_ET, IA_LMI_ET, IA_POV_ET, N_TRN_EOMI, FPL200S) %>% 
+  clean_names()
+
+# DSF_PFS = Diesel particulate matter exposure (percentile)
+# EBF_PFS = Energy burden (percentile)
+# LMI_PFS = Low median household income as a percent of area median income (percentile)
+# P100_PFS = Percent of individuals < 100% Federal Poverty Line (percentile)
+# P200_I_PFS = Percent of individuals below 200% Federal Poverty Line, imputed and adjusted (percentile)
+# NPL_PFS = Proximity to NPL (superfund) sites (percentile)
+# TSDF_PFS = Proximity to hazardous waste sites (percentile)
+# TPF,Total = Total population
+# TF_PFS = Traffic proximity and volume (percentile)
+# N_ENY = Energy Factor 
+# N_TRN = Transportation Factor
+# SN_C = Identified as disadvantaged
+# PLHSE = Greater than or equal to the 90th percentile for households at or below 100% federal poverty level and has low HS attainment
+# EB_ET = Greater than or equal to the 90th percentile for energy burden
+# DS_ET = Greater than or equal to the 90th percentile for diesel particulate matter
+# TP_ET = Greater than or equal to the 90th percentile for traffic proximity
+# POV_ET = Greater than or equal to the 90th percentile for households at or below 100% federal poverty level
+# IA_LMI_ET = Low median household income as a percent of territory median income in 2009 exceeds 90th percentile
+# IA_POV_ET = Percentage households below 100% of federal poverty line in 2009 exceeds 90th percentile
+# N_TRN_EOMI = At least one traffic threshold exceeded
+# FPL200S = Is low income (imputed and adjusted)?
+
+
+# filter cejst_clean to California state
+cejst_ca <- cejst_clean %>% 
+  filter(sf == "California")
+
+```
+
+### Combined datasets
+
+#### California
+```{r , ca-combined-datasets, results='hide', message=FALSE, warning=FALSE}
+#| code-fold: true
+
+# compare CRS
+# check cejst crs 
+st_crs(cejst) # WGS 84; "EPSG",4326
+st_crs(cejst_ca) == st_crs(ca_ev_sf) # TRUE
+
+# check invalid geometries
+cejst_ca[!st_is_valid(cejst_ca), ]
+ca_ev_sf[!st_is_valid(ca_ev_sf ), ]
+
+# assing ca_ev_sf df to ca_ev variable
+ca_ev <- ca_ev_sf 
+
+# subset EV charging map to the stations within California
+ca_ev <- ca_ev[cejst_ca, ] %>% 
+  distinct()
+
+# join ev charging and ejscreen datasets
+ca_ev_joined <- st_join(cejst_ca, ca_ev)
+
+# drop geometries for further analysis 
+ca_ev_df <- ca_ev_joined %>% 
+  st_drop_geometry() %>% 
+  distinct() # remove duplicate rows
+
+# convert NULL values to NAs
+ca_ev_df[ca_ev_df == "NULL"] <- NA
+
+# calculate number of charging stations per number of people in each census tract
+# rough assumptions: we want 0.05% - 0.1% of charging ports per capita
+# exclude level 1 ports from the dataset
+# to simplify we are going to apply this ratio state-wide
+ports_per_capita_excl_level1 <- ca_ev_df %>%
+  group_by(geoid10) %>%
+  mutate(
+    total_ports = any(!sapply(list(ev_dc_fast_num, ev_level2_evse_num, ev_level1_evse_num), is.na)),
+    total_ports_per_tract = sum(
+      ifelse(!is.na(ev_dc_fast_num), as.numeric(ev_dc_fast_num), 0),
+      ifelse(!is.na(ev_level2_evse_num), as.numeric(ev_level2_evse_num), 0)
+    ),
+    total_ports_capita_pct = (sum(total_ports_per_tract) / sum(tpf, na.rm = TRUE)) * 100
+  ) %>% 
+  ungroup()
+
+# remove extra variables
+ports_per_capita_excl_level1_clean <- ports_per_capita_excl_level1 %>% 
+  select(geoid10, id, total_ports, 
+         total_ports_per_tract,  total_ports_capita_pct, tf_pfs, p100_pfs, sn_c)
+
+# handle NA and Inf values
+ports_per_capita_excl_level1_clean <- ports_per_capita_excl_level1_clean[is.finite(ports_per_capita_excl_level1_clean$total_ports_capita_pct), ]
+```
+
+#### US
+
+```{r , us_combined-datasets, results='hide', message=FALSE, warning=FALSE}
+#| code-fold: true
+
+# compare CRS
+# check cejst crs 
+st_crs(cejst_clean) # WGS 84; "EPSG",4326
+st_crs(cejst_clean) == st_crs(us_ev_sf) # TRUE
+
+# check invalid geometries
+cejst_clean[!st_is_valid(cejst_clean), ]
+us_ev_sf [!st_is_valid(us_ev_sf ), ]
+
+# join ev charging and ejscreen datasets
+us_ev_joined <- st_join(cejst_clean, us_ev_sf)
+
+# verify the joined df
+# dim(us_ev_sf %>% filter(status_code %in% c("E","P")))  # 61336    16
+# dim(us_ev_joined %>% filter(status_code %in% c("E","P"))) # 61321    40
+
+# drop geometries for further analysis 
+us_ev_df <- us_ev_joined %>% 
+  st_drop_geometry() %>% 
+  distinct() # remove duplicate rows
+
+# convert NULL values to NAs
+us_ev_df[us_ev_df == "NULL"] <- NA
+
+# calculate number of charging stations per number of people in each census tract
+# rough assumptions: we want 0.05% - 0.1% of charging ports per capita
+# exclude level 1 ports from the dataset
+# to simplify we are going to apply this ratio state-wide
+us_ports_per_capita_excl_level1 <- us_ev_df %>%
+  group_by(geoid10) %>%
+  mutate(
+    total_ports = any(!sapply(list(ev_dc_fast_num, ev_level2_evse_num, ev_level1_evse_num), is.na)),
+    total_ports_per_tract = sum(
+      ifelse(!is.na(ev_dc_fast_num), as.numeric(ev_dc_fast_num), 0),
+      ifelse(!is.na(ev_level2_evse_num), as.numeric(ev_level2_evse_num), 0)
+    ),
+    total_ports_capita_pct = (sum(total_ports_per_tract) / sum(tpf, na.rm = TRUE)) * 100
+  ) %>% 
+  ungroup() %>% 
+  distinct()
+
+# remove extra variables
+us_ports_per_capita_excl_level1_clean <- us_ports_per_capita_excl_level1 %>% 
+  select(sf, geoid10, id, status_code, total_ports, 
+         total_ports_per_tract,  total_ports_capita_pct, tpf, tf_pfs, p100_pfs, sn_c)
+
+# handle NA and Inf values
+us_ports_per_capita_excl_level1_clean <- us_ports_per_capita_excl_level1_clean[is.finite(us_ports_per_capita_excl_level1_clean$total_ports_capita_pct), ]
+
+# get the count of EV chargers per state
+us_fast_ports_per_state <- us_ports_per_capita_excl_level1_clean %>% 
+  select(-id, -geoid10) %>% 
+  filter(! sf %in% c("Guam", "Northern Mariana Islands", "American Samoa", "Puerto Rico", "Virgin Islands")) %>% 
+  mutate(status_code = case_when(
+    status_code == "E" ~ "Operational",
+    status_code == "P" ~ "Planned",
+    .default = "Unavailable"
+  )) %>% 
+  distinct() %>% 
+  group_by(sf) %>% 
+  mutate(total_pop_per_state = sum(tpf),
+         total_fast_ports_per_state = sum(total_ports_per_tract),
+         total_fast_ports_per_pop = round((total_fast_ports_per_state/total_pop_per_state),8)) %>% 
+  ungroup() %>% 
+  group_by(sf, status_code) %>% 
+  summarise(total_fast_ports_per_pop_by_status = round((sum(sum(total_ports_per_tract))/sum(tpf)),8),
+            total_fast_ports_by_status = (sum(total_ports_per_tract)),
+            total_pop_per_state = unique(total_pop_per_state),
+            total_fast_ports_per_pop = unique(total_fast_ports_per_pop),
+            total_fast_ports_per_state = unique(total_fast_ports_per_state)) %>% 
+  ungroup() %>% 
+  distinct()
+```
+
+## Initial Data Exploration and Visualization
+
+**Viz 1.** Histograms: EV chargers distribution as of 2023
+
+```{r , data-viz_1, warning=FALSE, message=FALSE}
+# distribution of existing vs planned EV chargers in the US aggregated by state
+
+# EV charging stations planned & in operation
+us_fast_ports_per_state %>% 
+  select(sf, total_fast_ports_per_pop) %>%
+  distinct() %>% 
+  ggplot(aes(x = (total_fast_ports_per_pop*100))) +
+  geom_histogram(alpha = 0.7, fill = 'forestgreen') +
+  labs(x = "Total EV charging ports per state population in 2023 (%)",
+       y = "States count") +
+  theme_minimal()
+
+# EV charging stations planned & in operation faceted by status_code
+us_fast_ports_per_state %>% 
+  filter(status_code %in% c("Operational", "Planned")) %>% 
+  select(sf, status_code, total_fast_ports_per_pop) %>%
+  distinct() %>% 
+  ggplot(aes(x = (total_fast_ports_per_pop*100), fill = status_code)) +
+  geom_histogram(alpha = 0.8, bins = 30, position = "identity", color = "gray50") +
+  scale_fill_manual(values = c("forestgreen", "gray85")) +
+  labs(x = "Total EV charging ports per state population in 2023 (%)",
+       y = "States count",
+       fill = "Status code") +
+  theme_minimal()
+```
+
+
+**Viz 2.** Lollipops: EV chargers deployment by state and population
+
+```{r , data-viz_2, warning=FALSE, message=FALSE}
+# lollipop  charts: EV stations by state & population (planned and in operation)
+gridExtra::grid.arrange(
+  
+p1 <- us_fast_ports_per_state %>% 
+  select(sf, total_fast_ports_per_state) %>%
+  distinct() %>% 
+  slice_max(order_by = total_fast_ports_per_state, n = 20) %>%  # visualize top 20 states
+  ggplot(aes(x = fct_reorder(sf, total_fast_ports_per_state), y = total_fast_ports_per_state)) +
+  ggalt::geom_lollipop(color = '#79a471') +
+  geom_text(aes(label = total_fast_ports_per_state), hjust = -0.2, size = 3) +
+  scale_y_continuous(labels = scales::label_number(accuracy = 1, big.mark = ",", decimal.mark = "."), limits = c(0, 50000)
+                     ) +
+  coord_flip() +
+  labs(y = "Total EV charging ports per state (count)",
+       x = "Top 20 states") +
+  theme_minimal(),
+
+p2 <- us_fast_ports_per_state %>% 
+  select(sf, total_fast_ports_per_pop) %>%
+  distinct() %>% 
+  slice_max(order_by = total_fast_ports_per_pop, n = 20) %>%  # visualize top 20 states
+  ggplot(aes(x = fct_reorder(sf, total_fast_ports_per_pop), y = total_fast_ports_per_pop)) +
+  ggalt::geom_lollipop(color = '#79a471') +
+  geom_text(aes(label = scales::percent(total_fast_ports_per_pop, accuracy = 0.001)), hjust = -0.2, size = 3) +
+  scale_y_continuous(labels = scales::label_percent(accuracy = 0.01), limits = c(0, 0.002)
+                     ) +
+  coord_flip() +
+  labs(y = "Total EV charging ports per population (%)",
+       x = "Top 20 States") +
+  theme_minimal(),
+
+ncol = 2 )
+```
+
+
+**Viz 3**. Choropleth map: the distribution of EV infrastructure by census tracts' proximity to traffic and percentile of low income households for the state of California.
+
+```{r , data-viz_3, warning=FALSE, message=FALSE}
+# plot ev charging stations distribution in California state
+ev_by_road_proximity <- cejst_ca %>%
+  ggplot() +
+  geom_sf(aes(fill = tf_pfs), color = NA) +
+  scale_fill_viridis_c(option = "viridis", name = "Proximity to Traffic Percentile", trans = "reverse") +
+  # scale_fill_gradient(trans = "reverse") +
+  geom_sf(data = ca_ev, color = "red", size = 0.1, alpha = 0.3) +
+  labs(title = "EV Charging Infrastructure by Road Proximity",
+       fill = "Proximity to Traffic") +
+  theme_minimal()
+
+ev_by_income <- cejst_ca %>%
+  ggplot() +
+  geom_sf(aes(fill = p100_pfs), color = NA) +
+  scale_fill_viridis_c(option = "viridis", name = "Low-Income Percentile", trans = "reverse") +
+  geom_sf(data = ca_ev, color = "red", size = 0.1, alpha = 0.3) +
+  labs(title = "EV Charing Infrastructure by Low-Income Percentile",
+       fill = "Low-Income Percentage") +
+  theme_minimal()
+
+ev_by_road_proximity
+
+ev_by_income
+```
+
+
+## Questions
+
+1. What have you learned about your data? Have any potentially interesting patterns emerged? (5-8 sentences)\
+There are several trends that emerged:\
+- There is unequal distribution of charging infrastructure across the United States.
+- California is the outlier in the number of charging stations available by total count. However, District of Columbia and Vermont have a better coverage of EV infrastructure than California when normalized by population.
+- There are very few new EV charging stations planned. Note: it is possible that not all data is publicly available and some stations are in the approval process.
+- There is a high correlation between a census tract's proximity to traffic and availability of charging infrastructure (based on California state).
+- Census tracts that have high low-income population tend to be located in a close proximity to traffic ((based on California state).
+
+2. In HW #1, you outlined some questions that you wanted to answer using these data. Have you made any strides towards answering those questions? If yes, how so? If no, what next steps do you need to take (e.g. I need to create X plot type, I still need to track down Y data, I need to restructure existing data so that you can visualize it in Z ways, etc.)? (8-12 sentences)\
+
+**Progress**
+I was able to wrangle data that allows to work on the exploratory data analysis:
+1. For the state of California, I am able to see how many EV charging stations are located in census tracts with high percentile of low income households. 
+2. I am able to view EV charging infrastructure availability across the states.
+3. I was able to join Climate and Economic Justice data on EV charging infrastructure. Note: further analysis is required to determine whether there is a bias against deploying EV charging infrastructure in low income communities.
+
+**Pending**
+1. Define a binary variable of whether there is EV charging infrastructure available in a given census tract.
+2. Scale observations for the state of California to the rest of the states.
+  2.1. Create a choropleth map for the United States with the distribution of EV infrastructure by census tracts' proximity to traffic and percentile of low income households.
+3. Identify the difference in charging infrastructure between 2020 and 2023. 
+  3.1. This requires additional data wrangling to extract the dates when stations became operational.
+4. Create a distribution of EV charging infrastructure by region in addition to "top 20 states"
+
+3. What challenges do you foresee encountering with your data? These can be data wrangling and / or visualization challenges. (4-6 sentences)\
+1. There are missing values for the date EV charging stations became operational. This will require additional analysis to understand how to identify the difference in charging infrastructure between 2020 and 2023.
+2. I have normalized the data by population. It might be better approach to normalize the data by LDV (light duty vehicles) stock availability. I don't have this data available yet.
+3. I anticipate that creating a visualization of the changes in EV infrastructure over time (e.g. with an interactive element) will require additional research and coding skills.
