@@ -57,3 +57,7 @@ config.R
 # html
 *.html
 HW2-exploration_files
+
+.DS_Store
+
+../.here
