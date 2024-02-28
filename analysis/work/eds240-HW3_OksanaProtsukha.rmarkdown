@@ -1,0 +1,444 @@
+---
+title: Homework 3
+author: "Oksana Protsukha"
+date: "2023-02-24"
+toc: true
+format:
+  html:
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+editor: 
+  markdown: 
+    wrap: sentence
+---
+
+
+**Option**
+
+
+```{r, setup_options, message=FALSE, warning=FALSE, results='hide', echo=FALSE}
+rm(list=ls())
+
+# set default chunk options
+knitr::opts_chunk$set(fig.width = 4, fig.height = 3, 
+                      echo = TRUE, message = FALSE, warning = FALSE,
+                      tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+
+```
+
+```{r , setup, message=FALSE, warning=FALSE, results='hide'}
+#| eval: true
+#| echo: true
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                load packages                             ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+library(tidyverse) 
+library(patchwork)
+library(showtext) 
+library(janitor)
+library(lubridate)
+library(ggridges)
+library(data.table)
+library(plotly)
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##                                import data                               ----
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+source(file.path(here::here('src', 'prep-data.R')))
+
+```
+
+```{r , mockup-fig, message=FALSE, warning=FALSE}
+#| eval: true
+#| echo: false
+#| fig-align: "center"
+#| out-width: "100%"
+#| fig-alt: "Mock-up of the visualizations that analyze bias in EV charging deployment"
+
+knitr::include_graphics(here::here("assets", "EDS-240-Viz-HW3.png"))
+
+```
+
+
+### Question 1.
+
+What is a current state of public EV charging infrastructure deployment today ?
+
+***In progress***: *change in EV charging infrastructure deployment between 2020 and today.*
+
+#### Data
+
+-   **NREL API data set**:
+
+    -   ev_dc_fast_num,
+
+    -   ev_level2_evse_num,
+
+    -   ev_level1_evse_num,
+
+    -   open date
+
+#### Visualization: Sunburst chart
+
+
+```{r , viz-1, message=FALSE, warning=FALSE}
+#| code-fold: true
+
+# --- Data Wrangling ---#
+
+# define regions
+regions <- c(rep("Midwest", 12), rep("Northeast", 12), rep("Southeast", 12), rep("Southwest", 4), rep("West", 11))
+
+# define states
+states <- c(
+  rep(c("Illinois", "Indiana", "Iowa", "Kansas", "Michigan", "Minnesota", "Missouri", "Nebraska", "North Dakota", "Ohio", "South Dakota", "Wisconsin"), 1),
+  rep(c("Connecticut", "Maryland", "Maine", "New York", "Pennsylvania", "Vermont", "Delaware", "Massachusetts", "New Jersey", "New Hampshire", "Rhode Island", "District of Columbia"), 1),
+  rep(c("Arkansas", "Louisiana", "Kentucky", "Tennessee", "Mississippi", "Alabama", "West Virginia", "Virginia", "North Carolina", "South Carolina", "Georgia", "Florida"), 1),
+  rep(c("Arizona", "New Mexico", "Texas", "Oklahoma"), 1),
+  rep(c("Alaska", "California", "Colorado", "Hawaii", "Idaho", "Montana", "Nevada", "Oregon", "Utah", "Washington", "Wyoming"), 1)
+)
+
+# define ev_chargers deployed within each state
+ev_ports <- c(
+  3252, 1489, 815, 1091, 3210, 1994, 2471, 550, 204, 3553, 226, 1393, 2248, 4660, 1050, 10613, 4161, 938, 512, 7038, 3488, 536, 649, 1053, 807, 650, 783, 1979, 396, 946, 419, 4125, 3969, 1351, 4869, 9560, 3435, 669, 9539, 1286, 119, 44034, 5294, 781, 457, 380, 1886, 2976, 2217, 5501, 238
+)
+
+# create the dataframe
+ev_distribution_df <- data.frame(
+  regions = regions,
+  states = states,
+  ev_ports = ev_ports
+)
+
+
+# --- Hierarchy for sunburst plot ---# 
+
+# function to generate sunburst data hierarchy
+as.sunburstDF <- function(DF, value_column = NULL, add_root = FALSE){
+  # load data.table library to hanlde enhanced data.frame functionality
+  require(data.table)
+  
+  colNamesDF <- names(DF)
+  
+  if(is.data.table(DF)){
+    DT <- copy(DF)
+  } else {
+    DT <- data.table(DF, stringsAsFactors = FALSE)
+  }
+  
+  if(add_root){
+    DT[, root := "Total"]  
+  }
+  
+  colNamesDT <- names(DT)
+  hierarchy_columns <- setdiff(colNamesDT, value_column)
+  DT[, (hierarchy_columns) := lapply(.SD, as.factor), .SDcols = hierarchy_columns]
+  
+  if(is.null(value_column) && add_root){
+    setcolorder(DT, c("root", colNamesDF))
+  } else if(!is.null(value_column) && !add_root) {
+    setnames(DT, value_column, "values", skip_absent=TRUE)
+    setcolorder(DT, c(setdiff(colNamesDF, value_column), "values"))
+  } else if(!is.null(value_column) && add_root) {
+    setnames(DT, value_column, "values", skip_absent=TRUE)
+    setcolorder(DT, c("root", setdiff(colNamesDF, value_column), "values"))
+  }
+  
+  hierarchyList <- list()
+  
+  for(i in seq_along(hierarchy_columns)){
+    current_columns <- colNamesDT[1:i]
+    if(is.null(value_column)){
+      currentDT <- unique(DT[, ..current_columns][, values := .N, by = current_columns], by = current_columns)
+    } else {
+      currentDT <- DT[, lapply(.SD, sum, na.rm = TRUE), by=current_columns, .SDcols = "values"]
+    }
+    setnames(currentDT, length(current_columns), "labels")
+    hierarchyList[[i]] <- currentDT
+  }
+  
+  hierarchyDT <- rbindlist(hierarchyList, use.names = TRUE, fill = TRUE)
+  
+  parent_columns <- setdiff(names(hierarchyDT), c("labels", "values", value_column))
+  hierarchyDT[, parents := apply(.SD, 1, function(x){fifelse(all(is.na(x)), yes = NA_character_, no = paste(x[!is.na(x)], sep = ":", collapse = " - "))}), .SDcols = parent_columns]
+  hierarchyDT[, ids := apply(.SD, 1, function(x){paste(x[!is.na(x)], collapse = " - ")}), .SDcols = c("parents", "labels")]
+  hierarchyDT[, c(parent_columns) := NULL]
+  return(hierarchyDT)
+}
+
+sunburstDF <- as.sunburstDF(ev_distribution_df, value_column = "ev_ports", add_root = TRUE)
+
+# head(sunburstDF)
+
+
+# --- SUnburst Plot --- #
+
+# create labels for a sunburst plot
+selected_states <- ev_distribution_df %>% 
+  select(states, ev_ports) %>%
+  distinct() %>% 
+  slice_max(order_by = ev_ports, n = 10)
+
+selected_states <- selected_states$states
+
+text <- ifelse(sunburstDF$labels %in% c("Midwest", "Northeast", "Southeast", "Southwest", "West", "Total"), 
+               paste(sunburstDF$values, sep = " "),  # combine labels with their corresponding values for regions and totals
+               ifelse(sunburstDF$labels %in% selected_states, 
+                      sunburstDF$values,  # include values for selected states
+                      ""))  # set empty string for other states
+
+# generate sunburst plot
+plot_ly(data = sunburstDF,
+             ids = ~ids, 
+             labels = ~labels, 
+             parents = ~parents,
+             values = ~values,
+             type = 'sunburst',
+             branchvalues = 'total',
+             textinfo = 'label+text',  # include both label and text
+             hoverinfo = 'label+text',  # show label and text on hover
+             text = text)  %>% # combine labels with their corresponding values
+  layout(title = "EV charging ports deployment in the United States (Planned and Operational)",
+         margin = list(t = 40, b = 10),
+         sunburstcolorway = c("#04724d", "#bdbea9", "#8db38b", "#56876d", "#d2ab99"))  # custom color palette)
+```
+
+
+*Note: The code is adapted from* [RPubs](https://rpubs.com/DragonflyStats/Sunburst-Plots-With-Plotly)
+
+### Question 2.
+
+What is a total number of EV chargers installed as a percentage of a state population versus as a percent of population residing in disadvantage communities in proximity to traffic ?
+
+**Methodology used to identify disadvantaged communities suitable for EV charging ports deployment**
+
+::: {.callout-note icon="false"}
+Traffic proximity and volume $≥$ 90th percentile AND are at or above the 65th percentile for low income.
+Traffic proximity and volume is determined by a number of vehicles (average annual daily traffic) at major roads within 500 meters, divided by distance in meters.
+
+*Source: Traffic data from 2017 as compiled by EPA's EJScreen*
+:::
+
+#### Data
+
+**EJ justice**:
+
+-   SF State/Territory
+
+-   CF County Name
+
+-   GEOID Census Tract
+
+-   TPF Total population
+
+-   TF_PFS Traffic proximity and volume (percentile)
+
+-   N_TRN Transportation Factor (Definition N)
+
+-   TP_ET Greater than or equal to the 90th percentile for traffic proximity
+
+-   N_TRN_EOMI At least one traffic threshold exceeded
+
+-   SN_C Definition N community, including adjacency index tracts
+
+**NREL API data set**:
+
+-   ev_dc_fast_num
+
+-   ev_level2_evse_num
+
+-   ev_level1_evse_num
+
+-   open date
+
+#### Visualization: dumbbell chart
+
+
+```{r , viz-2, fig.width=12, fig.height=8, out.width="100%", out.height="100%"}
+#| code-fold: true
+
+# --- Data Wrangling --- #
+
+# --- United States --- #
+
+dac_us <- us_ev_joined %>% 
+  select(sf, geoid10, tpf, tf_pfs, n_trn, tp_et, n_trn_eomi, sn_c) %>% 
+  distinct() %>% 
+  rename(state_name = sf,
+         is_dac = sn_c)
+
+# create a dataframe with disadvantaged communities in US in proximity to traffic (>= 90th percentile)
+dac_us_df <- dac_us %>%
+  st_drop_geometry() %>%
+  filter(!is.na(tpf)) %>% 
+  filter(tpf!=0) %>% 
+  filter(!state_name %in% c("Guam", "Northern Mariana Islands", "American Samoa", "Puerto Rico", "Virgin Islands")) %>% 
+  group_by(state_name) %>% 
+  mutate(dac_ev_count = sum(tp_et == 1 & is_dac == 1), # count all rows where DACs are in proximity to traffic
+         dac_tot_count = sum(is_dac == 1),
+         dac_ev_tpf = sum(tpf * (tp_et == 1 & is_dac == 1)),
+         tpf_state = sum(tpf)) %>% # get a total population of DACs in proximity to traffic %>% 
+  ungroup()
+
+# join us_fast_ports_per_state df to dac_us_df df
+us_fast_ports <- us_fast_ports_per_state %>% 
+  select(sf, geoid10, total_ports_per_tract) %>% 
+  distinct()
+
+ev_dac_us_df <- left_join(dac_us_df, us_fast_ports, by = join_by(geoid10)) %>% 
+  select(-sf) %>% 
+  group_by(state_name) %>% 
+  mutate(ev_ports_per_state_pop_pct = sum(total_ports_per_tract)/tpf_state*100,
+         total_ports_state = sum(total_ports_per_tract),
+         # calculate total ports as of % of total pop of DACs suitable for EV charging
+         total_ports_dac_pop_pct = (sum(total_ports_per_tract * (tp_et == 1 & is_dac == 1))/dac_ev_tpf)*100,
+         total_ports_dac = sum(total_ports_per_tract * (tp_et == 1 & is_dac == 1))) %>% 
+  ungroup()
+
+ev_dac_us_chart <- ev_dac_us_df %>% 
+  select(state_name, ev_ports_per_state_pop_pct, total_ports_dac_pop_pct) %>% 
+  distinct()
+
+# --- Dumbbell chart --- #
+
+ggplot(ev_dac_us_chart) +
+  geom_segment(aes(x = ev_ports_per_state_pop_pct,
+                   xend = total_ports_dac_pop_pct,
+                   y = fct_reorder(state_name, ev_ports_per_state_pop_pct),
+                   yend = state_name)) +
+  geom_point(aes(x = ev_ports_per_state_pop_pct,
+                 y = state_name, color = "% as of state population"),
+             size = 2.5) +
+  geom_point(aes(x = total_ports_dac_pop_pct,
+                 y = state_name, color = "% as of population of DACs in proximity to traffic"),
+             size = 2.5) +
+  labs(y = "",
+       x = "% of EV Charging Ports Per Capita",
+       title = "EV Charging Ports Deployment in the United States") +
+  theme_classic() +
+  scale_color_manual(values = c("#de6b48", "#7dbbc3"),
+                     labels = c("% as of population of disadvantaged communities in proximity to traffic", 
+                                "% as of state population")) +
+  guides(color = guide_legend(title = NULL)) +
+  theme(legend.position = "top",
+        legend.box = "horizontal",
+        axis.title.x = element_text(margin = margin(t = 15), size = 11),
+        axis.title.y = element_text(margin = margin(r = 15), size = 11),
+        plot.title = element_text(margin = margin(b = 15)),
+        legend.text = element_text(size = 11))
+```
+
+
+### Question 3.
+
+Disadvantaged communities suitable for EV charging deployment within California?
+
+*In progress*:
+
+-   overlay of installed and planned EV chargers on the map
+
+-   *comparison between the state of EV chargers deployment in 2020 vs 2023*
+
+-   *scale visualization to the rest of the states*
+
+#### Data
+
+**EJ justice**:
+
+-   SF State/Territory
+
+-   CF County Name
+
+-   GEOID Census Tract
+
+-   TPF Total population
+
+-   TF_PFS Traffic proximity and volume (percentile)
+
+-   N_TRN Transportation Factor (Definition N)
+
+-   TP_ET Greater than or equal to the 90th percentile for traffic proximity
+
+-   N_TRN_EOMI At least one traffic threshold exceeded
+
+-   SN_C Definition N community, including adjacency index tracts
+
+**NREL API data set**:
+
+-   ev_dc_fast_num
+
+-   ev_level2_evse_num
+
+-   ev_level1_evse_num
+
+-   open date
+
+#### Visualization: Choropleth maps (California)
+
+
+```{r , viz-3, fig.width=12, fig.height=8, out.width="100%", out.height="100%", warning=FALSE}
+#| code-fold: true
+
+
+# --- Data Wrangling --- #
+
+# --- California --- #
+
+# create a dataframe with all disadvantaged communities in California
+dac_ca <- us_ev_joined %>% 
+  select(sf, geoid10, tpf, tf_pfs, n_trn, tp_et, n_trn_eomi, sn_c) %>% 
+  distinct() %>% 
+  rename(state_name = sf,
+         is_dac = sn_c) %>% 
+  filter(state_name == "California")
+
+dac_traffic_ca <- dac_ca %>% 
+  filter(tp_et == 1 & is_dac == 1)
+
+# --- Choropleth Map --- #
+
+dac_ca %>%
+  ggplot() +
+  geom_sf(aes(fill = tf_pfs), color = NA) +
+  scale_fill_viridis_c(option = "viridis", name = "Proximity to Traffic (Percentile)", 
+                       trans = "reverse", alpha = 0.9) +
+  geom_point(data = dac_traffic_ca,
+             aes(color = as.factor(tp_et), geometry = geometry),  # Convert to factor if categorical
+             stat = "sf_coordinates",
+             size = 0.1,
+             alpha = 0.6) +
+  labs(title = "Census Tracts Proximity to Traffic, Including Disadvantaged Communities (DAC), California",
+       fill = "Proximity to Traffic") +
+  scale_color_manual(values = c("#3423a6"), 
+                     name = "DACs in proximity to traffic",
+                     labels = NULL) +
+  theme_void() +
+  theme(legend.position = "right") +
+  guides(color = guide_legend(override.aes = list(size = 3, alpha = 100),
+                              label.position = "bottom",
+                              title.position = "top",
+                              direction = "horizontal"))
+
+```
+
+
+1.  What challenges did you encounter or anticipate encountering as you continue to build / iterate on your visualizations in R?\
+
+-   Creating a readable choropleth map for the country requires additional work. In the current homework, the visualization for a single state is completed.
+-   Additional data review and wrangling were required to generate the visualizations, particularly the dumbbell plot.
+-   Annotations for the sunburst plot need improvement in the next iterations.
+-   I encountered difficulty in saving the data retrieved from the API into a file (failed to flatten a dataframe). As a result, it took additional time to run the end-to-end analysis every time I restarted the project.
+-   Generating choropleth map even for a single state took a long time. This made iterating over the map very slow.
+
+2.  What ggplot extension tools / packages do you need to use to build your visualizations?
+    Are there any that we haven't covered in class that you'll be learning how to use for your visualizations?\
+    I used plotly and data.table for sunburst plot.
+    These packages were not covered in the class.
+
+3.  What feedback do you need from the instructional team and / or your peers to ensure that your intended message is clear?\
+    I would like to receive a feedback on whether the visualizations answer the intended questions.
+    However, additional work is required to finalize the visualizations
+
