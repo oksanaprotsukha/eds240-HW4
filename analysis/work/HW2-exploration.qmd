@@ -4,23 +4,31 @@ subtitle: "Part II"
 author: "Oksana Protsukha"
 date: 2024-02-03
 toc: true
-format: html
+format:
+  html:
+    embed-resources: true
 editor_options: 
   chunk_output_type: console
+editor: 
+  markdown: 
+    wrap: sentence
 ---
+
 ## Vocabulary
 
-Types of EV charging connectors:
-- Level 1 connector: standardized connector primarily for home use. The charge rate is 3-5 miles per hour.
+Types of EV charging connectors: - Level 1 connector: standardized connector primarily for home use.
+The charge rate is 3-5 miles per hour.
 Applicable for trips up to 40 miles or less daily.
 
-- Level 2 connector: standardized connector primarily for home or office use. The charge rate is 15-30 miles per hour.
-Applicable for trips 100+ miles daily.
+-   Level 2 connector: standardized connector primarily for home or office use.
+    The charge rate is 15-30 miles per hour.
+    Applicable for trips 100+ miles daily.
 
-- DC fast charging: three connector types (CCS, CHAdeMO, NACS) connected to dedicated high power stations. The charge rate is 150-400 miles per hour.
-Applicable for trips 300+ miles daily.
+-   DC fast charging: three connector types (CCS, CHAdeMO, NACS) connected to dedicated high power stations.
+    The charge rate is 150-400 miles per hour.
+    Applicable for trips 300+ miles daily.
 
-## Setup 
+## Setup
 
 ### Global options
 
@@ -54,21 +62,23 @@ library(kableExtra)
 library(janitor)
 ```
 
-### Authentice API keys
+### Authenticate API keys
 
 ```{r api_keys, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 # load configuration
-source(file.path(here::here('config.R')))
+here::set_here(path='/Users/oksi/Documents/UCSB/MEDS/EDS-240/assignments/eds240-HW4/', verbose = TRUE)
+source(file.path(here::here('src','config.R')))
 
 # retrieve API Key
 api_key <- NREL_API_KEY
 ```
 
-
 ### Import data
 
 #### EV charging stations data
+
 ##### California
+
 ```{r ca_ev_data_import, warning=FALSE, message=FALSE}
 #| code-fold: true
 
@@ -101,8 +111,8 @@ fuel_stations_df <- content(response, "parsed")$fuel_stations
 fuel_stations_df <- as.data.frame(do.call(rbind, fuel_stations_df))
 ```
 
-
 ##### United States
+
 ```{r ev_all_states_data_import, warning=FALSE, message=FALSE}
 #| code-fold: true
 
@@ -134,15 +144,13 @@ fuel_stations_us_df <- content(response, "parsed")$fuel_stations
 fuel_stations_us_df <- as.data.frame(do.call(rbind, fuel_stations_us_df))
 ```
 
-
-
 #### CEJST (Climate and Economic Justice Screening Tool) data
 
 ```{r , cejst-data-import, results='hide', warning=FALSE, message=FALSE}
 #| code-fold: true
 
 # read in shape file
-cejst <- st_read(here::here("data/usa/usa.shp"))
+cejst <- st_read(here::here("data","raw","/usa/usa.shp"))
 
 # make an initial plot of cejst: California state
 cejst %>% 
@@ -154,7 +162,6 @@ cejst %>%
   coord_sf() +
   theme_minimal()
 ```
-
 
 ## Data Wrangling
 
@@ -197,6 +204,7 @@ us_ev_sf <- fuel_stations_us_df_clean %>%
 ```
 
 ### CEJST (Climate and Economic Justice Screening Tool) data
+
 Source: https://static-data-screeningtool.geoplatform.gov/data-versions/1.0/data/score/downloadable/1.0-shapefile-codebook.zip
 
 ```{r , cejst-clean, results='hide', warning=FALSE, message=FALSE}
@@ -239,6 +247,7 @@ cejst_ca <- cejst_clean %>%
 ### Combined datasets
 
 #### California
+
 ```{r , ca-combined-datasets, results='hide', message=FALSE, warning=FALSE}
 #| code-fold: true
 
@@ -404,7 +413,6 @@ us_fast_ports_per_state %>%
   theme_minimal()
 ```
 
-
 **Viz 2.** Lollipops: EV chargers deployment by state and population
 
 ```{r , data-viz_2, warning=FALSE, message=FALSE}
@@ -442,8 +450,8 @@ p2 <- us_fast_ports_per_state %>%
 ncol = 2 )
 ```
 
-
-**Viz 3**. Choropleth map: the distribution of EV infrastructure by census tracts' proximity to traffic and percentile of low income households for the state of California.
+**Viz 3**.
+Choropleth map: the distribution of EV infrastructure by census tracts' proximity to traffic and percentile of low income households for the state of California.
 
 ```{r , data-viz_3, warning=FALSE, message=FALSE}
 # plot ev charging stations distribution in California state
@@ -471,34 +479,42 @@ ev_by_road_proximity
 ev_by_income
 ```
 
-
 ## Questions
 
-1. What have you learned about your data? Have any potentially interesting patterns emerged? (5-8 sentences)\
-There are several trends that emerged:\
-- There is unequal distribution of charging infrastructure across the United States.
-- California is the outlier in the number of charging stations available by total count. However, District of Columbia and Vermont have a better coverage of EV infrastructure than California when normalized by population.
-- There are very few new EV charging stations planned. Note: it is possible that not all data is publicly available and some stations are in the approval process.
-- There is a high correlation between a census tract's proximity to traffic and availability of charging infrastructure (based on California state).
-- Census tracts that have high low-income population tend to be located in a close proximity to traffic ((based on California state).
+1.  What have you learned about your data? Have any potentially interesting patterns emerged? (5-8 sentences)\
+    There are several trends that emerged:\
 
-2. In HW #1, you outlined some questions that you wanted to answer using these data. Have you made any strides towards answering those questions? If yes, how so? If no, what next steps do you need to take (e.g. I need to create X plot type, I still need to track down Y data, I need to restructure existing data so that you can visualize it in Z ways, etc.)? (8-12 sentences)\
+-   There is unequal distribution of charging infrastructure across the United States.
+-   California is the outlier in the number of charging stations available by total count. However, District of Columbia and Vermont have a better coverage of EV infrastructure than California when normalized by population.
+-   There are very few new EV charging stations planned. Note: it is possible that not all data is publicly available and some stations are in the approval process.
+-   There is a high correlation between a census tract's proximity to traffic and availability of charging infrastructure (based on California state).
+-   Census tracts that have high low-income population tend to be located in a close proximity to traffic ((based on California state).
 
-**Progress**
-I was able to wrangle data that allows to work on the exploratory data analysis:
-1. For the state of California, I am able to see how many EV charging stations are located in census tracts with high percentile of low income households. 
-2. I am able to view EV charging infrastructure availability across the states.
-3. I was able to join Climate and Economic Justice data on EV charging infrastructure. Note: further analysis is required to determine whether there is a bias against deploying EV charging infrastructure in low income communities.
+2.  In HW #1, you outlined some questions that you wanted to answer using these data. Have you made any strides towards answering those questions? If yes, how so? If no, what next steps do you need to take (e.g. I need to create X plot type, I still need to track down Y data, I need to restructure existing data so that you can visualize it in Z ways, etc.)? (8-12 sentences)\
 
-**Pending**
-1. Define a binary variable of whether there is EV charging infrastructure available in a given census tract.
-2. Scale observations for the state of California to the rest of the states.
-  2.1. Create a choropleth map for the United States with the distribution of EV infrastructure by census tracts' proximity to traffic and percentile of low income households.
-3. Identify the difference in charging infrastructure between 2020 and 2023. 
-  3.1. This requires additional data wrangling to extract the dates when stations became operational.
-4. Create a distribution of EV charging infrastructure by region in addition to "top 20 states"
+**Progress** I was able to wrangle data that allows to work on the exploratory data analysis: 1.
+For the state of California, I am able to see how many EV charging stations are located in census tracts with high percentile of low income households.
+2.
+I am able to view EV charging infrastructure availability across the states.
+3.
+I was able to join Climate and Economic Justice data on EV charging infrastructure.
+Note: further analysis is required to determine whether there is a bias against deploying EV charging infrastructure in low income communities.
 
-3. What challenges do you foresee encountering with your data? These can be data wrangling and / or visualization challenges. (4-6 sentences)\
-1. There are missing values for the date EV charging stations became operational. This will require additional analysis to understand how to identify the difference in charging infrastructure between 2020 and 2023.
-2. I have normalized the data by population. It might be better approach to normalize the data by LDV (light duty vehicles) stock availability. I don't have this data available yet.
-3. I anticipate that creating a visualization of the changes in EV infrastructure over time (e.g. with an interactive element) will require additional research and coding skills.
+**Pending** 1.
+Define a binary variable of whether there is EV charging infrastructure available in a given census tract.
+2.
+Scale observations for the state of California to the rest of the states.
+2.1.
+Create a choropleth map for the United States with the distribution of EV infrastructure by census tracts' proximity to traffic and percentile of low income households.
+3.
+Identify the difference in charging infrastructure between 2020 and 2023.
+3.1.
+This requires additional data wrangling to extract the dates when stations became operational.
+4.
+Create a distribution of EV charging infrastructure by region in addition to "top 20 states"
+
+3.  What challenges do you foresee encountering with your data? These can be data wrangling and / or visualization challenges. (4-6 sentences)
+
+-   There are missing values for the date EV charging stations became operational. This will require additional analysis to understand how to identify the difference in charging infrastructure between 2020 and 2023.
+-   I have normalized the data by population. It might be better approach to normalize the data by LDV (light duty vehicles) stock availability. I don't have this data available yet.
+-   I anticipate that creating a visualization of the changes in EV infrastructure over time (e.g. with an interactive element) will require additional research and coding skills.
