@@ -860,6 +860,28 @@ ev_by_income <- cejst_ca %>%
 ev_by_road_proximity
 
 ev_by_income
+
+dac_ca %>%
+  ggplot() +
+  geom_sf(aes(fill = tf_pfs), color = NA) +
+  scale_fill_viridis_c(option = "viridis", name = "Proximity to Traffic (Percentile)", 
+                       trans = "reverse", alpha = 0.9) +
+  geom_point(data = dac_traffic_ca,
+             aes(color = as.factor(tp_et), geometry = geometry),  # Convert to factor if categorical
+             stat = "sf_coordinates",
+             size = 0.1,
+             alpha = 0.6) +
+  labs(title = "Disadvantaged communities, California",
+       fill = "Proximity to Traffic") +
+  scale_color_manual(values = c("#3423a6"), 
+                     name = "Disadvantaged Communities",
+                     labels = NULL) +
+  theme_void() +
+  theme(legend.position = "right") +
+  guides(color = guide_legend(override.aes = list(size = 3, alpha = 100),
+                              label.position = "bottom",
+                              title.position = "top",
+                              direction = "horizontal"))
 ```
 
 #### Viz 3. Lollipops: EV chargers deployment by state and population
