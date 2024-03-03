@@ -13,7 +13,9 @@ editor:
     wrap: sentence
 ---
 
-**Option**
+### **OPTION 2:**
+
+**Build a cohesive infographic-style visualization that includes *at least three* different, but complementary visualizations that work together to tell a complete story.**
 
 ```{r, setup_options, message=FALSE, warning=FALSE, results='hide', echo=FALSE}
 rm(list=ls())
@@ -25,8 +27,7 @@ knitr::opts_chunk$set(fig.width = 4, fig.height = 3,
 
 ```
 
-
-```{r , setup}
+```{r , setup, message=FALSE, warning=FALSE, results='hide'}
 #| eval: true
 #| echo: true
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -50,8 +51,7 @@ source(file.path(here::here('src', 'prep-data.R')))
 
 ```
 
-
-```{r , mockup-fig}
+```{r , mockup-fig, message=FALSE, warning=FALSE}
 #| eval: true
 #| echo: false
 #| fig-align: "center"
@@ -63,26 +63,29 @@ knitr::include_graphics(here::here("assets", "EDS-240-Viz-HW3.png"))
 ```
 
 ### Question 1.
-How did public EV infrastructure deployment changed between 2020 and 2023 in the United States?
-- total EV charging ports (DC and level 2)
-- normalized as a percent of state population
+
+What is a current state of public EV charging infrastructure deployment today ?
+
+***In progress***: *change in EV charging infrastructure deployment between 2020 and today.*
 
 #### Data
-**NREL API data set**: ev_dc_fast_num, ev_level2_evse_num, ev_level1_evse_num, open date
-**US shape file**: tigris library
+
+-   **NREL API data set**:
+
+    -   ev_dc_fast_num,
+
+    -   ev_level2_evse_num,
+
+    -   ev_level1_evse_num,
+
+    -   open date
 
 #### Visualization: Sunburst chart
 
-::: {.callout-note icon=false}
-
-## How do we determine the date a station became operational
-
-**Open_date variable** for electric vehicle charging stations added to the Station Locator through automated data feeds from charging networks, this is either the date provided by the charging network or the date it appeared in the Station Locator if the charging network does not provide an open date.
-
-:::
- 
-```{r}
+```{r , viz-1, message=FALSE, warning=FALSE}
 #| code-fold: true
+
+# --- Data Wrangling ---#
 
 # define regions
 regions <- c(rep("Midwest", 12), rep("Northeast", 12), rep("Southeast", 12), rep("Southwest", 4), rep("West", 11))
@@ -107,6 +110,9 @@ ev_distribution_df <- data.frame(
   states = states,
   ev_ports = ev_ports
 )
+
+
+# --- Hierarchy for sunburst plot ---# 
 
 # function to generate sunburst data hierarchy
 as.sunburstDF <- function(DF, value_column = NULL, add_root = FALSE){
@@ -163,8 +169,12 @@ as.sunburstDF <- function(DF, value_column = NULL, add_root = FALSE){
 
 sunburstDF <- as.sunburstDF(ev_distribution_df, value_column = "ev_ports", add_root = TRUE)
 
-head(sunburstDF)
+# head(sunburstDF)
 
+
+# --- SUnburst Plot --- #
+
+# create labels for a sunburst plot
 selected_states <- ev_distribution_df %>% 
   select(states, ev_ports) %>%
   distinct() %>% 
@@ -178,7 +188,7 @@ text <- ifelse(sunburstDF$labels %in% c("Midwest", "Northeast", "Southeast", "So
                       sunburstDF$values,  # include values for selected states
                       ""))  # set empty string for other states
 
-
+# generate sunburst plot
 plot_ly(data = sunburstDF,
              ids = ~ids, 
              labels = ~labels, 
@@ -194,45 +204,58 @@ plot_ly(data = sunburstDF,
          sunburstcolorway = c("#04724d", "#bdbea9", "#8db38b", "#56876d", "#d2ab99"))  # custom color palette)
 ```
 
-*Note: The code is adapted from* [RPubs](https://rpubs.com/DragonflyStats/Sunburst-Plots-With-Plotly) 
+*Note: The code is adapted from* [RPubs](https://rpubs.com/DragonflyStats/Sunburst-Plots-With-Plotly)
 
-### Question 2. 
-Which census tracks are suitable for EV charging infrastructure deployment in California?
-- all census tracks designated as DAC
-- DAC suitable for EV charging as % of all census tracts.
+### Question 2.
 
-::: {.callout-note icon=false}
+What is a total number of EV chargers installed as a percentage of a state population versus as a percent of population residing in disadvantage communities in proximity to traffic ?
 
-## Methodology used to identify disadvantaged communities suitable for EV charging ports deployment
+**Methodology used to identify disadvantaged communities suitable for EV charging ports deployment**
 
-Traffic proximity and volume $≥$ 90th percentile 
-AND are at or above the 65th percentile for low income.
+::: {.callout-note icon="false"}
+Traffic proximity and volume $≥$ 90th percentile AND are at or above the 65th percentile for low income.
 Traffic proximity and volume is determined by a number of vehicles (average annual daily traffic) at major roads within 500 meters, divided by distance in meters.
 
 *Source: Traffic data from 2017 as compiled by EPA's EJScreen*
 :::
 
 #### Data
-**EJ justice**: 
-* SF	State/Territory
-* CF	County Name
-* GEOID Census Tract
-* TPF	Total population
-* TF_PFS	Traffic proximity and volume (percentile)
-* N_TRN	Transportation Factor (Definition N)
-* TP_ET	Greater than or equal to the 90th percentile for traffic proximity
-* N_TRN_EOMI	At least one traffic threshold exceeded
-* SN_C	Definition N community, including adjacency index tracts
 
-**NREL API data set**: 
-* ev_dc_fast_num
-* ev_level2_evse_num
-* ev_level1_evse_num, open date
+**EJ justice**:
 
+-   SF State/Territory
+
+-   CF County Name
+
+-   GEOID Census Tract
+
+-   TPF Total population
+
+-   TF_PFS Traffic proximity and volume (percentile)
+
+-   N_TRN Transportation Factor (Definition N)
+
+-   TP_ET Greater than or equal to the 90th percentile for traffic proximity
+
+-   N_TRN_EOMI At least one traffic threshold exceeded
+
+-   SN_C Definition N community, including adjacency index tracts
+
+**NREL API data set**:
+
+-   ev_dc_fast_num
+
+-   ev_level2_evse_num
+
+-   ev_level1_evse_num
+
+-   open date
 
 #### Visualization: dumbbell chart
 
-```{r}
+```{r , viz-2, fig.width=12, fig.height=8, out.width="100%", out.height="100%"}
+#| code-fold: true
+
 # --- Data Wrangling --- #
 
 # --- United States --- #
@@ -304,34 +327,56 @@ ggplot(ev_dac_us_chart) +
         legend.text = element_text(size = 11))
 ```
 
-
 ### Question 3.
-Can those who reside within DAC areas suitable for EV charging deployment charge their EVs today or will in the near future?
-*In progress*: 
-* comparison between the state of EV chargers deployment in 2020 vs 2023
-* scale visualization to the rest of the states
+
+Where are the disadvantaged communities suitable for EV charging deployment within California?
+
+*In progress*:
+
+-   overlay of installed and planned EV chargers on the map
+
+-   *comparison between the state of EV chargers deployment in 2020 vs 2023*
+
+-   *scale visualization to the rest of the states*
 
 #### Data
-**EJ justice**: 
-* SF	State/Territory
-* CF	County Name
-* GEOID Census Tract
-* TPF	Total population
-* TF_PFS	Traffic proximity and volume (percentile)
-* N_TRN	Transportation Factor (Definition N)
-* TP_ET	Greater than or equal to the 90th percentile for traffic proximity
-* N_TRN_EOMI	At least one traffic threshold exceeded
-* SN_C	Definition N community, including adjacency index tracts
 
-**NREL API data set**: 
-* ev_dc_fast_num
-* ev_level2_evse_num
-* ev_level1_evse_num, open date
+**EJ justice**:
 
+-   SF State/Territory
+
+-   CF County Name
+
+-   GEOID Census Tract
+
+-   TPF Total population
+
+-   TF_PFS Traffic proximity and volume (percentile)
+
+-   N_TRN Transportation Factor (Definition N)
+
+-   TP_ET Greater than or equal to the 90th percentile for traffic proximity
+
+-   N_TRN_EOMI At least one traffic threshold exceeded
+
+-   SN_C Definition N community, including adjacency index tracts
+
+**NREL API data set**:
+
+-   ev_dc_fast_num
+
+-   ev_level2_evse_num
+
+-   ev_level1_evse_num
+
+-   open date
 
 #### Visualization: Choropleth maps (California)
 
-```{r}
+```{r , viz-3, fig.width=12, fig.height=8, out.width="100%", out.height="100%", warning=FALSE}
+#| code-fold: true
+
+
 # --- Data Wrangling --- #
 
 # --- California --- #
@@ -344,45 +389,49 @@ dac_ca <- us_ev_joined %>%
          is_dac = sn_c) %>% 
   filter(state_name == "California")
 
-# --- Choropleth Map --- #
-dac_ca %>%
-  ggplot() +
-  geom_sf(aes(fill = tf_pfs), color = NA) +
-  scale_fill_viridis_c(option = "viridis", name = "Proximity to Traffic Percentile", trans = "reverse") +
-  # scale_fill_gradient(trans = "reverse") +
-  geom_sf(aes(color = tp_et), size = 0.1, alpha = 0.3) +
-  labs(title = "EV Charging Infrastructure by Road Proximity",
-       fill = "Proximity to Traffic") +
-  theme_minimal()
-
 dac_traffic_ca <- dac_ca %>% 
-  filter(tp_et == 1)
+  filter(tp_et == 1 & is_dac == 1)
+
+# --- Choropleth Map --- #
 
 dac_ca %>%
   ggplot() +
-  geom_sf(aes(color = geoid10)) +
   geom_sf(aes(fill = tf_pfs), color = NA) +
-  scale_fill_viridis_c(option = "viridis", name = "Proximity to Traffic Percentile", trans = "reverse") +
+  scale_fill_viridis_c(option = "viridis", name = "Proximity to Traffic (Percentile)", 
+                       trans = "reverse", alpha = 0.9) +
   geom_point(data = dac_traffic_ca,
-    aes(color = tp_et, geometry = geometry),
-    stat = "sf_coordinates",
-    color = "red"
-  ) +
-  labs(title = "EV Charging Infrastructure by Road Proximity",
-       fill = "Proximity to Traffic") +
-  theme_minimal()
+             aes(color = as.factor(tp_et), geometry = geometry),
+             stat = "sf_coordinates",
+             size = 0.1,
+             alpha = 0.6) +
+  labs(title = "Census Tracts Proximity to Traffic, Including Disadvantaged Communities (DAC), California",
+       fill = "Proximity to Traffic (Percentile)") +
+  scale_color_manual(values = c("#3423a6"), 
+                     name = "DACs in proximity to traffic",
+                     labels = NULL) +
+  theme_void() +
+  # adjust legend
+  theme(legend.position = "right") +
+  guides(color = guide_legend(override.aes = list(size = 3, alpha = 100),
+                              label.position = "bottom",
+                              title.position = "top",
+                              direction = "horizontal"))
 
-dac_ca %>%
-  ggplot() +
-  geom_sf(aes(color = geoid10)) +
-  geom_point(data = dac_traffic_ca,
-    aes(color = tp_et, geometry = geometry),
-    stat = "sf_coordinates",
-    color = "darkblue"
-  ) +
-  labs(title = "EV Charging Infrastructure by Road Proximity",
-       fill = "Proximity to Traffic") +
-  theme_minimal()
-  
-  
 ```
+
+1.  What challenges did you encounter or anticipate encountering as you continue to build / iterate on your visualizations in R?\
+
+-   Creating a readable choropleth map for the country requires additional work. In the current homework, the visualization for a single state is completed.
+-   Additional data review and wrangling were required to generate the visualizations, particularly the dumbbell plot.
+-   Annotations for the sunburst plot need improvement in the next iterations.
+-   I encountered difficulty in saving the data retrieved from the API into a file (failed to flatten a dataframe). As a result, it took additional time to run the end-to-end analysis every time I restarted the project.
+-   Generating choropleth map even for a single state took a long time. This made iterating over the map very slow.
+
+2.  What ggplot extension tools / packages do you need to use to build your visualizations?
+    Are there any that we haven't covered in class that you'll be learning how to use for your visualizations?\
+    I used plotly and data.table for sunburst plot.
+    These packages were not covered in the class.
+
+3.  What feedback do you need from the instructional team and / or your peers to ensure that your intended message is clear?\
+    I would like to receive a feedback on whether the visualizations answer the intended questions.
+    However, additional work is required to finalize the visualizations
