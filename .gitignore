@@ -57,6 +57,7 @@ config.R
 # html
 *.html
 HW2-exploration_files
+!HW4-final.html
 
 .DS_Store
 

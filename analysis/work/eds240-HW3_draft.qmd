@@ -778,14 +778,14 @@ us_states <- states(class = "sf", cb = TRUE) %>%
   rename(state_name = name) %>% 
   # remove states / territories outside of the scope of analysis ----
   filter(!state_name %in% c("United States Virgin Islands", "Puerto Rico", "American Samoa",
-                       "Commonwealth of the Northern Mariana Islands", "Guam")) %>% 
+                       "Commonwealth of the Northern Mariana Islands", "Guam", "Alaska", "Hawaii")) %>% 
   select(statefp, state_name)
 
 
 us_ev_map_df <- us_ev_joined %>% 
   st_drop_geometry() %>% 
   select(sf, ev_dc_fast_num, ev_level2_evse_num, ev_level1_evse_num, tpf) %>% 
-  distinct()
+  distinct() %>% 
   unnest(cols = c(ev_dc_fast_num, ev_level2_evse_num, ev_level1_evse_num)) %>% 
   group_by(sf) %>%
   mutate(

@@ -15,7 +15,7 @@ editor:
 
 ### **OPTION 2:**
 
-**Build a cohesive infographic-style visualization that includes *at least three* different, but complementary visualizations that work together to tell a complete story.**
+**Build a cohesive infographic-style visualization that includes*at least three*different, but complementary visualizations that work together to tell a complete story.**
 
 ```{r, setup_options, message=FALSE, warning=FALSE, results='hide', echo=FALSE}
 rm(list=ls())
@@ -178,30 +178,43 @@ sunburstDF <- as.sunburstDF(ev_distribution_df, value_column = "ev_ports", add_r
 selected_states <- ev_distribution_df %>% 
   select(states, ev_ports) %>%
   distinct() %>% 
-  slice_max(order_by = ev_ports, n = 10)
+  slice_max(order_by = ev_ports, n = 5)
 
 selected_states <- selected_states$states
 
-text <- ifelse(sunburstDF$labels %in% c("Midwest", "Northeast", "Southeast", "Southwest", "West", "Total"), 
-               paste(sunburstDF$values, sep = " "),  # combine labels with their corresponding values for regions and totals
+# Create text vector for selected states
+text_selected <- ifelse(sunburstDF$labels %in% c("Midwest", "Northeast", "Southeast", "Southwest", "West", "Total"), 
+               paste(scales::comma(sunburstDF$values), sep = " "),  # combine labels with their corresponding values for regions and totals
                ifelse(sunburstDF$labels %in% selected_states, 
-                      sunburstDF$values,  # include values for selected states
+                      scales::comma(sunburstDF$values),  # include values for selected states
                       ""))  # set empty string for other states
+
+# Create text vector for all states
+text_all <- paste(scales::comma(sunburstDF$values), sep = " ")
 
 # generate sunburst plot
 plot_ly(data = sunburstDF,
-             ids = ~ids, 
-             labels = ~labels, 
-             parents = ~parents,
-             values = ~values,
-             type = 'sunburst',
-             branchvalues = 'total',
-             textinfo = 'label+text',  # include both label and text
-             hoverinfo = 'label+text',  # show label and text on hover
-             text = text)  %>% # combine labels with their corresponding values
+        ids = ~ids, 
+        labels = ~labels, 
+        parents = ~parents,
+        values = ~values,
+        type = 'sunburst',
+        branchvalues = 'total',
+        textinfo = 'label+text',  # only include label
+        hoverinfo = 'label+text',  # show label and text on hover
+        text = text_selected,  # set initial text to display EV charging ports for top 10 states
+        hovertext = text_all)  %>%  # set hover text to display ports for all states
   layout(title = "EV charging ports deployment in the United States (Planned and Operational)",
          margin = list(t = 40, b = 10),
-         sunburstcolorway = c("#04724d", "#bdbea9", "#8db38b", "#56876d", "#d2ab99"))  # custom color palette)
+         sunburstcolorway = c("West" = "#0c99c0",
+                              "Northeast" = "#E78173",
+                              "Southeast" = "#659b5e",
+                              "Midwest" = "#ffd23f",
+                              "Southwest" = "#d3b88c"),
+         paper_bgcolor = "#FCF7ED",
+         font = list(size = 14)) 
+
+# "#FCF7ED" "#E5EFD8" "#CEE8C3" "#B7E0AF" "#A1D99B"
 ```
 
 *Note: The code is adapted from* [RPubs](https://rpubs.com/DragonflyStats/Sunburst-Plots-With-Plotly)
@@ -325,6 +338,95 @@ ggplot(ev_dac_us_chart) +
         axis.title.y = element_text(margin = margin(r = 15), size = 11),
         plot.title = element_text(margin = margin(b = 15)),
         legend.text = element_text(size = 11))
+```
+
+Dumbell plot for selected states only
+
+```{r}
+
+#| code-fold: true
+
+# --- Data Wrangling --- #
+
+# --- United States --- #
+
+dac_us <- us_ev_joined %>% 
+  select(sf, geoid10, tpf, tf_pfs, n_trn, tp_et, n_trn_eomi, sn_c) %>% 
+  distinct() %>% 
+  rename(state_name = sf,
+         is_dac = sn_c)
+
+# create a dataframe with disadvantaged communities in the US in proximity to traffic (>= 90th percentile)
+dac_us_df <- dac_us %>%
+  st_drop_geometry() %>%
+  filter(!is.na(tpf)) %>% 
+  filter(tpf!=0) %>% 
+  filter(state_name %in% selected_states) %>% 
+  group_by(state_name) %>% 
+  mutate(dac_ev_count = sum(tp_et == 1 & is_dac == 1), # count all rows where DACs are in proximity to traffic
+         dac_tot_count = sum(is_dac == 1),
+         dac_ev_tpf = sum(tpf * (tp_et == 1 & is_dac == 1)),
+         tpf_state = sum(tpf)) %>% # get a total population of DACs in proximity to traffic %>% 
+  ungroup()
+
+# join us_fast_ports_per_state df to dac_us_df df
+us_fast_ports <- us_fast_ports_per_state %>% 
+  select(sf, geoid10, total_ports_per_tract) %>% 
+  distinct()
+
+ev_dac_us_df <- left_join(dac_us_df, us_fast_ports, by = join_by(geoid10)) %>% 
+  select(-sf) %>% 
+  group_by(state_name) %>% 
+  mutate(ev_ports_per_state_pop_pct = sum(total_ports_per_tract)/tpf_state*100,
+         total_ports_state = sum(total_ports_per_tract),
+         # calculate total ports as of % of total pop of DACs suitable for EV charging
+         total_ports_dac_pop_pct = (sum(total_ports_per_tract * (tp_et == 1 & is_dac == 1))/dac_ev_tpf)*100,
+         total_ports_dac = sum(total_ports_per_tract * (tp_et == 1 & is_dac == 1))) %>% 
+  ungroup()
+
+ev_dac_us_chart <- ev_dac_us_df %>% 
+  select(state_name, ev_ports_per_state_pop_pct, total_ports_dac_pop_pct) %>% 
+  distinct()
+
+# --- Dumbbell chart --- #
+
+ggplot(ev_dac_us_chart) +
+  geom_segment(aes(x = ev_ports_per_state_pop_pct,
+                   xend = total_ports_dac_pop_pct,
+                   y = fct_reorder(state_name, ev_ports_per_state_pop_pct),
+                   yend = state_name)) +
+  # geom_point(aes(x = ev_ports_per_state_pop_pct,
+  #                y = state_name, color = "% as of state population"),
+  #            size = 2.5) +
+  geom_emoji(aes(x = ev_ports_per_state_pop_pct,
+                 y = state_name, emoji = "% as of state population"),
+             emoji = "1f697") +
+  geom_emoji(aes(x = total_ports_dac_pop_pct,
+                 y = state_name, emoji = "% as of population of DACs in proximity to traffic"),
+             emoji = "1f698") +
+  # geom_point(aes(x = total_ports_dac_pop_pct,
+  #                y = state_name, color = "% as of population of DACs in proximity to traffic"),
+  #            size = 2.5) +
+  labs(y = "",
+       x = "% of EV Charging Ports Per Capita",
+       title = "EV Charging Ports Deployment in the United States") +
+  theme_bw() +
+  scale_color_manual(values = c("#de6b48", "#7dbbc3"),
+                     labels = c("% as of population of disadvantaged communities in proximity to traffic", 
+                                "% as of state population")) +
+  scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+  guides(color = guide_legend(title = NULL)) +
+  theme(legend.position = "top",
+        legend.box = "horizontal",
+        axis.title.x = element_text(margin = margin(t = 15), size = 11),
+        axis.title.y = element_text(margin = margin(r = 15), size = 11),
+        plot.title = element_text(margin = margin(b = 15)),
+        legend.text = element_text(size = 11),
+        panel.grid = element_blank(),
+        plot.background = element_rect("#FCF7ED"),
+        panel.background = element_rect("#FCF7ED"),
+        legend.background = element_rect("#FCF7ED"))
+
 ```
 
 ### Question 3.
